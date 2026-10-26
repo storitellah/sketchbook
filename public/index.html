@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Luna &amp; Lara's Sketchbook</title>
+  <meta name="description" content="Drawings and paintings by Luna and Lara.">
+  <meta name="theme-color" content="#efe6d6">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="gallery.json" as="fetch" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <h1 class="brand">Luna &amp; Lara's Sketchbook</h1>
+    <nav class="tabs" role="tablist" aria-label="Whose sketchbook"></nav>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="book" id="book" role="region" aria-roledescription="flip book" aria-label="Sketchbook" tabindex="-1"></div>
+  </main>
+
+  <footer class="controls">
+    <button class="nav-btn" id="prev" type="button" aria-label="Previous page">&larr;</button>
+    <span class="counter" id="counter" aria-live="polite"></span>
+    <button class="nav-btn" id="next" type="button" aria-label="Next page">&rarr;</button>
+  </footer>
+  <p class="hint">Use the arrow keys, swipe, or tap a page to flip</p>
+
+  <dialog class="viewer" id="viewer">
+    <form method="dialog"><button class="close" aria-label="Close">&times;</button></form>
+    <img alt="">
+    <p class="viewer-caption"></p>
+  </dialog>
+</body>
+</html>

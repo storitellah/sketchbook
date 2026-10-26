@@ -1,0 +1,81 @@
+{
+  "title": "The Sketchbook",
+  "girls": [
+    {
+      "slug": "luna",
+      "name": "Luna",
+      "cover": "#3d5a80",
+      "accent": "#f4a259",
+      "art": [
+        {
+          "id": "sample-luna-sunny-house",
+          "sample": true,
+          "w": 600,
+          "h": 800,
+          "color": "#fffdf8",
+          "title": "Our House",
+          "date": "2025-03-02",
+          "src": "art/samples/luna-sunny-house.svg"
+        },
+        {
+          "id": "sample-luna-cat",
+          "sample": true,
+          "w": 800,
+          "h": 600,
+          "color": "#fffdf8",
+          "title": "Mr Whiskers",
+          "date": "2025-05-18",
+          "src": "art/samples/luna-cat.svg"
+        },
+        {
+          "id": "sample-luna-rocket",
+          "sample": true,
+          "w": 600,
+          "h": 800,
+          "color": "#fffdf8",
+          "title": "To the Moon",
+          "date": "2025-09-07",
+          "src": "art/samples/luna-rocket.svg"
+        }
+      ]
+    },
+    {
+      "slug": "lara",
+      "name": "Lara",
+      "cover": "#b5446e",
+      "accent": "#7ec4cf",
+      "art": [
+        {
+          "id": "sample-lara-rainbow",
+          "sample": true,
+          "w": 800,
+          "h": 600,
+          "color": "#fffdf8",
+          "title": "Rainbow Day",
+          "date": "2025-02-14",
+          "src": "art/samples/lara-rainbow.svg"
+        },
+        {
+          "id": "sample-lara-flower",
+          "sample": true,
+          "w": 600,
+          "h": 800,
+          "color": "#fffdf8",
+          "title": "Flowers for Mum",
+          "date": "2025-05-11",
+          "src": "art/samples/lara-flower.svg"
+        },
+        {
+          "id": "sample-lara-fish",
+          "sample": true,
+          "w": 800,
+          "h": 600,
+          "color": "#fffdf8",
+          "title": "Under the Sea",
+          "date": "2025-08-23",
+          "src": "art/samples/lara-fish.svg"
+        }
+      ]
+    }
+  ]
+}

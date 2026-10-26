@@ -1,0 +1,7 @@
+{
+  "title": "The Sketchbook",
+  "girls": [
+    { "slug": "luna", "name": "Luna", "cover": "#3d5a80", "accent": "#f4a259" },
+    { "slug": "lara", "name": "Lara", "cover": "#b5446e", "accent": "#7ec4cf" }
+  ]
+}

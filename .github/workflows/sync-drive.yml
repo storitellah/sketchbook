@@ -1,0 +1,44 @@
+name: Sync artwork from Google Drive
+
+on:
+  schedule:
+    - cron: "17 * * * *" # every hour
+  workflow_dispatch: # "Run workflow" button for an instant update
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-drive
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Pull new artwork
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          DRIVE_FOLDER: ${{ vars.DRIVE_FOLDER }}
+        run: npm run sync
+
+      - name: Commit changes
+        run: |
+          git add -A public
+          if git diff --cached --quiet; then
+            echo "No new artwork."
+            exit 0
+          fi
+          git config user.name "sketchbook-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update artwork from Google Drive"
+          git push

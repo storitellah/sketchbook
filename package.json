@@ -1,0 +1,14 @@
+{
+  "name": "sketchbook",
+  "private": true,
+  "type": "module",
+  "description": "Luna & Lara's sketchbook — a flip-book portfolio synced from Google Drive.",
+  "scripts": {
+    "sync": "node scripts/sync-drive.mjs",
+    "serve": "npx --yes serve public"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "sharp": "^0.34.0"
+  }
+}
