@@ -44,7 +44,7 @@ Then open **Actions → Sync artwork from Google Drive → Run workflow** to do 
 ### 4. Host on Cloudflare Pages
 
 1. In the Cloudflare dashboard, go to **Workers & Pages → Create → Pages → Connect to Git** and pick this repo.
-2. Production branch: `main`. Framework preset: **None**. Build command: *(leave empty)*. Build output directory: `public`.
+2. Production branch: `main`. Framework preset: **None**. Build command: *(leave empty)*. The output directory (`public`) comes from `wrangler.toml`.
 3. Deploy. Every push to `main` redeploys, including the bot's artwork updates.
 
 ## Day to day
