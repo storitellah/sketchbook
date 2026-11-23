@@ -1,7 +1,18 @@
 {
   "title": "The Sketchbook",
+  "driveFolder": "https://drive.google.com/drive/folders/1wR3fqXHODBR1LPqaB5XsBOLHlT7NnQd4",
   "girls": [
-    { "slug": "luna", "name": "Luna", "cover": "#3d5a80", "accent": "#f4a259" },
-    { "slug": "lara", "name": "Lara", "cover": "#b5446e", "accent": "#7ec4cf" }
+    {
+      "slug": "luna",
+      "name": "Luna",
+      "cover": "#3d5a80",
+      "accent": "#f4a259"
+    },
+    {
+      "slug": "lara",
+      "name": "Lara",
+      "cover": "#b5446e",
+      "accent": "#7ec4cf"
+    }
   ]
 }

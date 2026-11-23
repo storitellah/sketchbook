@@ -1,173 +1,270 @@
 #!/usr/bin/env node
-// Pulls artwork from a shared Google Drive folder into public/art and
+// Pulls artwork from the shared Google Drive folder into public/art and
 // rewrites public/gallery.json. Run by the GitHub Action on a schedule;
 // it only touches files when something in Drive actually changed.
 //
-//   GOOGLE_API_KEY   Google Cloud API key with the Drive API enabled
-//   DRIVE_FOLDER     the shared folder's link or ID (one subfolder per girl)
+// The folder must be shared as "Anyone with the link can view". No API key
+// is needed: the public folder view is read directly. Setting GOOGLE_API_KEY
+// switches listing to the official Drive API instead.
+//
+// Photos (JPG, PNG, WebP, HEIC, ...) and PDF scans are both supported;
+// every page of a PDF becomes its own sketchbook page (needs `pdftoppm`).
 
-import { readFile, writeFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 
+const execFile = promisify(execFileCb);
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const MANIFEST = path.join(PUBLIC, 'gallery.json');
 const WIDTHS = [640, 1280];
-const API = 'https://www.googleapis.com/drive/v3';
-
-const key = process.env.GOOGLE_API_KEY;
-const folderInput = process.env.DRIVE_FOLDER || '';
-if (!key || !folderInput) {
-  console.error('Set GOOGLE_API_KEY and DRIVE_FOLDER (link or ID of the shared Drive folder).');
-  process.exit(1);
-}
-const rootId = (folderInput.match(/folders\/([\w-]+)/) || folderInput.match(/[?&]id=([\w-]+)/) || [, folderInput.trim()])[1];
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|heic|heif|avif|tiff?|bmp)$/i;
 
 const config = JSON.parse(await readFile(path.join(ROOT, 'sketchbook.config.json'), 'utf8'));
+const folderInput = process.env.DRIVE_FOLDER || config.driveFolder || '';
+const rootId = (folderInput.match(/folders\/([\w-]+)/) || folderInput.match(/[?&]id=([\w-]+)/) || [, folderInput.trim()])[1];
+if (!rootId) {
+  console.error('Set "driveFolder" in sketchbook.config.json to the shared Drive folder link.');
+  process.exit(1);
+}
+const key = process.env.GOOGLE_API_KEY;
+
 const previous = await readFile(MANIFEST, 'utf8').then(JSON.parse).catch(() => ({ girls: [] }));
 const previousArt = new Map(previous.girls.flatMap((g) => g.art || []).map((a) => [a.id, a]));
 
-async function drive(url, params = {}) {
-  const u = new URL(url);
-  for (const [k, v] of Object.entries({ ...params, key })) u.searchParams.set(k, v);
+async function get(url, what) {
   for (let attempt = 1; ; attempt++) {
-    const res = await fetch(u);
+    const res = await fetch(url);
     if (res.ok) return res;
     if (attempt < 4 && (res.status === 429 || res.status >= 500)) {
       await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
       continue;
     }
-    throw new Error(`Drive API ${res.status} for ${u.pathname}: ${await res.text()}`);
+    throw new Error(`${what}: HTTP ${res.status}`);
   }
 }
 
-async function listChildren(id) {
+// ---------- listing a folder: [{ id, name, folder }] ----------
+
+const decodeHtml = (s) => s
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
+  .replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+async function listPublic(id) {
+  const html = await (await get(`https://drive.google.com/embeddedfolderview?id=${id}`, `folder ${id}`)).text();
+  if (!html.includes('flip-entries')) throw new Error(`Folder ${id} isn't readable. Is it shared as "Anyone with the link"?`);
+  return html.split('class="flip-entry"').slice(1).map((chunk) => ({
+    id: chunk.match(/id="entry-([\w-]+)"/)?.[1],
+    name: decodeHtml(chunk.match(/class="flip-entry-title">([^<]*)</)?.[1] || ''),
+    folder: /href="[^"]*\/folders\//.test(chunk),
+  })).filter((f) => f.id);
+}
+
+async function listApi(id) {
   const files = [];
   let pageToken = '';
   do {
-    const res = await drive(`${API}/files`, {
+    const u = new URL('https://www.googleapis.com/drive/v3/files');
+    const params = {
       q: `'${id}' in parents and trashed = false`,
-      fields: 'nextPageToken, files(id, name, mimeType, createdTime, modifiedTime, thumbnailLink, imageMediaMetadata(time))',
-      pageSize: '1000',
-      supportsAllDrives: 'true',
-      includeItemsFromAllDrives: 'true',
+      fields: 'nextPageToken, files(id, name, mimeType)',
+      pageSize: '1000', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', key,
       ...(pageToken && { pageToken }),
-    });
-    const body = await res.json();
-    files.push(...body.files);
+    };
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    const body = await (await get(u, `folder ${id}`)).json();
+    files.push(...body.files.map((f) => ({ id: f.id, name: f.name, folder: f.mimeType === 'application/vnd.google-apps.folder' })));
     pageToken = body.nextPageToken || '';
   } while (pageToken);
   return files;
 }
 
-// Images in a girl's folder, including any subfolders (e.g. one per year).
-async function listImages(id) {
+const list = key ? listApi : listPublic;
+
+// Artwork files in a folder, including any subfolders (e.g. one per year).
+async function listArt(id) {
   const out = [];
-  for (const f of await listChildren(id)) {
-    if (f.mimeType === 'application/vnd.google-apps.folder') out.push(...(await listImages(f.id)));
-    else if (f.mimeType.startsWith('image/')) out.push(f);
+  for (const f of await list(id)) {
+    if (f.folder) out.push(...(await listArt(f.id)));
+    else if (/\.pdf$/i.test(f.name) || IMAGE_EXT.test(f.name)) out.push(f);
   }
   return out;
 }
 
 async function download(file) {
-  const res = await drive(`${API}/files/${file.id}`, { alt: 'media', supportsAllDrives: 'true' });
+  const res = await get(`https://drive.usercontent.google.com/download?id=${file.id}&export=download&confirm=t`, file.name);
+  if ((res.headers.get('content-type') || '').includes('text/html')) throw new Error('Drive returned a web page instead of the file');
   return Buffer.from(await res.arrayBuffer());
 }
 
-// Some formats (e.g. iPhone HEIC) can't be decoded by sharp's bundled libvips;
-// Drive's own rendition of the image is a good fallback.
-async function decode(file) {
+// ---------- turning a file into page images ----------
+
+async function pdfPages(buf) {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sketch-'));
   try {
-    const img = sharp(await download(file), { failOn: 'none' }).rotate();
-    await img.metadata();
-    return await img.toBuffer();
-  } catch (err) {
-    if (!file.thumbnailLink) throw err;
-    console.warn(`  ${file.name}: ${err.message.split('\n')[0]} — using Drive's rendition`);
-    const res = await fetch(file.thumbnailLink.replace(/=s\d+$/, '=s1600'));
-    if (!res.ok) throw err;
-    return sharp(Buffer.from(await res.arrayBuffer())).toBuffer();
+    await writeFile(path.join(dir, 'in.pdf'), buf);
+    const info = await execFile('pdfinfo', ['-isodates', path.join(dir, 'in.pdf')]).then((r) => r.stdout, () => '');
+    // pdftoppm prints harmless warnings for some phone scans, so check the output instead of the exit code.
+    await execFile('pdftoppm', ['-r', '150', '-png', path.join(dir, 'in.pdf'), path.join(dir, 'p')]).catch(() => {});
+    const pngs = (await readdir(dir)).filter((f) => f.endsWith('.png')).sort();
+    if (!pngs.length) throw new Error('could not render the PDF');
+    const pages = await Promise.all(pngs.map((f) => readFile(path.join(dir, f))));
+    // Phone scanners often leave the scan date only in an embedded ModDate.
+    const raw = buf.toString('latin1').match(/(?:Creation|Mod)Date\s*\(D:(\d{4})(\d\d)(\d\d)/);
+    return { pages, date: info.match(/CreationDate:\s+(\d{4}-\d\d-\d\d)/)?.[1] || (raw && `${raw[1]}-${raw[2]}-${raw[3]}`) };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
+}
+
+async function imagePages(file, buf) {
+  try {
+    const img = sharp(buf, { failOn: 'none' }).rotate();
+    const meta = await img.metadata();
+    const exif = meta.exif?.toString('latin1').match(/(\d{4}):(\d\d):(\d\d) \d\d:\d\d:\d\d/);
+    return { pages: [await img.toBuffer()], date: exif && `${exif[1]}-${exif[2]}-${exif[3]}` };
+  } catch (err) {
+    // Formats sharp can't decode (e.g. iPhone HEIC): use Drive's own rendition.
+    console.warn(`  ${file.name}: ${err.message.split('\n')[0]}; using Drive's preview copy`);
+    const res = await get(`https://drive.google.com/thumbnail?id=${file.id}&sz=w1600`, file.name);
+    return { pages: [Buffer.from(await res.arrayBuffer())] };
+  }
+}
+
+// ---------- names, captions and dates ----------
+
+const MONTHS = 'jan feb mar apr may jun jul aug sep oct nov dec'.split(' ');
+const DATE_RE = /\b(?:(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})|([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})|(\d{4})-(\d\d)-(\d\d))\b/i;
+
+function dateInName(name) {
+  const m = name.match(DATE_RE);
+  if (!m) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (m[7]) return `${m[7]}-${m[8]}-${m[9]}`;
+  const [d, mon, y] = m[1] ? [m[1], m[2], m[3]] : [m[5], m[4], m[6]];
+  const mi = MONTHS.indexOf(mon.slice(0, 3).toLowerCase());
+  return mi < 0 ? null : `${y}-${pad(mi + 1)}-${pad(d)}`;
+}
+
+// A file named "Lara_..." or "Lara ..." belongs in Lara's book whichever folder it's in.
+function ownerByName(name, fallback) {
+  return config.girls.find((g) => new RegExp(`^${g.name}[\\s_-]`, 'i').test(name)) || fallback;
+}
+
+function titleFrom(name, girl) {
+  let t = name.replace(/\.[^.]+$/, '')
+    .replace(DATE_RE, ' ')
+    .replace(/\(\d+\)/g, ' ')
+    .replace(/[_]+/g, ' ')
+    .replace(/\b(adobe scan|scan|img|pxl|dsc|photo|image)\b/gi, ' ')
+    .replace(new RegExp(`\\bby ${girl.name}\\b`, 'i'), ' ')
+    .replace(new RegExp(`^\\s*${girl.name}('s)?\\b`, 'i'), ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!/[a-z]{3}/i.test(t) || /^[ivxlc\d\s]+$/i.test(t)) return '';
+  return t[0].toUpperCase() + t.slice(1);
 }
 
 const exists = (p) => stat(p).then(() => true, () => false);
 
-function titleFrom(name) {
-  const base = name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
-  // Camera-roll names like "IMG 2041" or "PXL 20240101 ..." make poor captions.
-  return /^(img|pxl|dsc|photo|image|scan)\b|^\d[\d\s]*$/i.test(base) ? '' : base;
-}
+// ---------- main ----------
 
-function dateOf(file) {
-  const exif = file.imageMediaMetadata?.time; // "2024:03:09 15:01:22"
-  if (exif && /^\d{4}:\d\d:\d\d/.test(exif)) return exif.slice(0, 10).replaceAll(':', '-');
-  return file.createdTime.slice(0, 10);
-}
-
-const folders = (await listChildren(rootId)).filter((f) => f.mimeType === 'application/vnd.google-apps.folder');
-const girls = [];
+const folders = (await list(rootId)).filter((f) => f.folder);
+const books = new Map(config.girls.map((g) => [g.slug, []]));
+const seen = new Set();
 const keep = new Set();
 let added = 0;
 
 for (const girl of config.girls) {
   const folder = folders.find((f) => f.name.toLowerCase().includes(girl.name.toLowerCase()));
-  if (!folder) console.warn(`No folder named like "${girl.name}" in the Drive folder — her book will be empty.`);
-  const images = folder ? await listImages(folder.id) : [];
-  const dir = path.join(PUBLIC, 'art', girl.slug);
-  await mkdir(dir, { recursive: true });
+  if (!folder) console.warn(`No folder named like "${girl.name}" in the Drive folder.`);
+  for (const file of folder ? await listArt(folder.id) : []) {
+    const owner = ownerByName(file.name, girl);
+    let buf;
+    try {
+      buf = await download(file);
+    } catch (err) {
+      console.warn(`  ! skipped ${file.name}: ${err.message}`);
+      continue;
+    }
+    const hash = createHash('sha1').update(buf).digest('hex');
+    if (seen.has(hash)) {
+      console.log(`  = ${file.name} is a duplicate, skipped`);
+      continue;
+    }
+    seen.add(hash);
+    const tag = hash.slice(0, 10);
+    const dir = path.join(PUBLIC, 'art', owner.slug);
+    await mkdir(dir, { recursive: true });
 
-  const art = [];
-  for (const file of images) {
-    const tag = createHash('sha1').update(file.id + file.modifiedTime).digest('hex').slice(0, 10);
-    const names = WIDTHS.map((w) => `${tag}-${w}.webp`);
-    names.forEach((n) => keep.add(`${girl.slug}/${n}`));
-    const old = previousArt.get(file.id);
-    const fresh = old?.tag === tag && (await Promise.all(names.map((n) => exists(path.join(dir, n))))).every(Boolean);
+    // Reuse earlier work when the file hasn't changed.
+    const cached = [];
+    for (let p = 1; previousArt.has(`${file.id}-${p}`); p++) cached.push(previousArt.get(`${file.id}-${p}`));
+    const fresh = cached.length && cached.every((a) => a.tag === `${tag}-${a.page}` && a.src.startsWith(`art/${owner.slug}/`))
+      && (await Promise.all(cached.flatMap((a) => WIDTHS.map((w) => exists(path.join(dir, `${a.tag}-${w}.webp`)))))).every(Boolean);
 
-    let entry = fresh ? old : null;
-    if (!entry) {
+    let entries = fresh ? cached : null;
+    if (!entries) {
       try {
-        console.log(`  + ${girl.name}: ${file.name}`);
-        const src = await decode(file);
-        const meta = await sharp(src).metadata();
-        for (const [i, w] of WIDTHS.entries()) {
-          await sharp(src).resize({ width: w, height: w, fit: 'inside', withoutEnlargement: true })
-            .webp({ quality: 80, effort: 5 }).toFile(path.join(dir, names[i]));
+        console.log(`  + ${owner.name}: ${file.name}`);
+        const { pages, date } = /\.pdf$/i.test(file.name) ? await pdfPages(buf) : await imagePages(file, buf);
+        const when = dateInName(file.name) || date || '';
+        entries = [];
+        for (const [i, page] of pages.entries()) {
+          const ptag = `${tag}-${i + 1}`;
+          const src = sharp(page).flatten({ background: '#ffffff' });
+          const meta = await sharp(page).metadata();
+          for (const w of WIDTHS) {
+            await src.clone().resize({ width: w, height: w, fit: 'inside', withoutEnlargement: true })
+              .webp({ quality: 80, effort: 5 }).toFile(path.join(dir, `${ptag}-${w}.webp`));
+          }
+          const { dominant: d } = await sharp(page).stats();
+          const scale = Math.min(1, WIDTHS.at(-1) / Math.max(meta.width, meta.height));
+          entries.push({
+            id: `${file.id}-${i + 1}`,
+            page: i + 1,
+            tag: ptag,
+            w: Math.round(meta.width * scale),
+            h: Math.round(meta.height * scale),
+            color: `rgb(${d.r},${d.g},${d.b})`,
+            date: when,
+          });
         }
-        const { dominant: d } = await sharp(src).stats();
-        const scale = Math.min(1, WIDTHS.at(-1) / Math.max(meta.width, meta.height));
-        entry = {
-          id: file.id,
-          tag,
-          w: Math.round(meta.width * scale),
-          h: Math.round(meta.height * scale),
-          color: `rgb(${d.r},${d.g},${d.b})`,
-        };
         added++;
       } catch (err) {
         console.warn(`  ! skipped ${file.name}: ${err.message}`);
         continue;
       }
     }
-    art.push({
-      ...entry,
-      title: titleFrom(file.name),
-      date: dateOf(file),
-      src: `art/${girl.slug}/${names.at(-1)}`,
-      srcset: names.map((n, i) => `art/${girl.slug}/${n} ${WIDTHS[i]}w`).join(', '),
-    });
+    for (const e of entries) {
+      WIDTHS.forEach((w) => keep.add(`${owner.slug}/${e.tag}-${w}.webp`));
+      books.get(owner.slug).push({
+        ...e,
+        title: titleFrom(file.name, owner),
+        name: file.name,
+        src: `art/${owner.slug}/${e.tag}-${WIDTHS.at(-1)}.webp`,
+        srcset: WIDTHS.map((w) => `art/${owner.slug}/${e.tag}-${w}.webp ${w}w`).join(', '),
+      });
+    }
   }
-  art.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  girls.push({ ...girl, art });
 }
+
+const girls = config.girls.map(({ slug, name, cover, accent }) => ({
+  slug, name, cover, accent,
+  // Oldest first; drawings with no known date go at the end.
+  art: books.get(slug).sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || a.name.localeCompare(b.name) || a.page - b.page),
+}));
 
 // Drop images that were removed from Drive, plus the starter samples.
 let removed = 0;
 for (const sub of await readdir(path.join(PUBLIC, 'art'))) {
-  if (!config.girls.some((g) => g.slug === sub)) {
+  if (!books.has(sub)) {
     await rm(path.join(PUBLIC, 'art', sub), { recursive: true, force: true });
     continue;
   }
@@ -185,4 +282,4 @@ if (strip(next) !== strip(previous)) {
   next.updated = new Date().toISOString();
   await writeFile(MANIFEST, JSON.stringify(next, null, 2) + '\n');
 }
-console.log(`Done: ${girls.map((g) => `${g.name} ${g.art.length}`).join(', ')} (${added} new, ${removed / WIDTHS.length} removed).`);
+console.log(`Done: ${girls.map((g) => `${g.name} ${g.art.length}`).join(', ')} pages (${added} files processed, ${removed / WIDTHS.length} images removed).`);
