@@ -2,11 +2,12 @@ name: Sync artwork from Google Drive
 
 on:
   schedule:
-    - cron: "17 * * * *" # every hour
+    - cron: "*/15 * * * *" # every 15 minutes (GitHub may run it a little late)
   workflow_dispatch: # "Run workflow" button for an instant update
 
 permissions:
   contents: write
+  actions: write # for the keep-alive step below
 
 concurrency:
   group: sync-drive
@@ -16,7 +17,11 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      # Always work on main, the branch Cloudflare publishes, whichever branch
+      # the schedule happens to run from.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
@@ -43,4 +48,12 @@ jobs:
           git config user.name "sketchbook-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update artwork from Google Drive"
-          git push
+          git push origin HEAD:main
+
+      # GitHub switches off scheduled workflows after 60 days without commits.
+      # Re-enabling it on every run keeps it going during quiet spells.
+      - name: Keep the schedule alive
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable sync-drive.yml --repo "$GITHUB_REPOSITORY" || echo "Could not refresh the schedule"

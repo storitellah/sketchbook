@@ -4,8 +4,8 @@
     {
       "slug": "luna",
       "name": "Luna",
-      "cover": "#3d5a80",
-      "accent": "#f4a259",
+      "cover": "#3e63dd",
+      "accent": "#ffb224",
       "art": [
         {
           "id": "1K4vZhJwnY1XVYwjtoUnNzSUFvXmPrMvY-1",
@@ -324,8 +324,8 @@
     {
       "slug": "lara",
       "name": "Lara",
-      "cover": "#b5446e",
-      "accent": "#7ec4cf",
+      "cover": "#c2298a",
+      "accent": "#12a594",
       "art": [
         {
           "id": "1YH1DGroMbU9tFh269BiGGNnVqGxo0MEv-1",
@@ -343,5 +343,107 @@
       ]
     }
   ],
-  "updated": "2026-11-23T12:23:48.699Z"
+  "sources": {
+    "179gWq2pSUxTvkv5p_TPsy00jznCQgVvw": {
+      "mod": "Oct 26",
+      "hash": "02ae3ded7e74649d382b2aeec93ed897342a6493"
+    },
+    "1fPAOkbhvgXOt_2XCxk39EyoJoOe4tNCV": {
+      "mod": "Oct 26",
+      "hash": "46a2a7314cebfed6b8cb84e40c8c8cb0ad4ab4bc"
+    },
+    "1it3pbdAUXIj1S0Dwy-qH12FnMBqfGH9-": {
+      "mod": "Oct 26",
+      "hash": "0a34c12c0e483ec21d0158d5b63b5fa1853318a7"
+    },
+    "1yVSKh8WiGvOBgEA5hKCVvCXvOb_uN-xR": {
+      "mod": "Oct 26",
+      "hash": "a313249889d3f1e2b380dba68bb844a07a9f33d1"
+    },
+    "1oEWSzV4eFSbhFnROZCmaU4ODW5QdICWQ": {
+      "mod": "Nov 12",
+      "hash": "6394befff01f008136357be07e63cffa5a7e3261"
+    },
+    "1_pfmB3XffZmHN7gWPHRk83fXDVDLlWaA": {
+      "mod": "Nov 12",
+      "hash": "57b7396a4eb27d9cb94d28ed4c9920c11054976f"
+    },
+    "1AQIbr6c5n5Q0EKMqOwV6vAr0KPFpyFIV": {
+      "mod": "Nov 12",
+      "hash": "83afe73e47b6eb8e4e534f867171170c36077ba6"
+    },
+    "1YH1DGroMbU9tFh269BiGGNnVqGxo0MEv": {
+      "mod": "Oct 26",
+      "hash": "1c32db72e6b27baaa6d5fb396285571809b5082b"
+    },
+    "1xbUGGir2_CLeWQFxX1dBFDbCwZKRS3H7": {
+      "mod": "Oct 26",
+      "hash": "1fabab135340fc02ac263caf0d14fe1615fdba6c"
+    },
+    "1N2ic5BkyjfdReatiKDzBld_-rPihajo4": {
+      "mod": "Nov 12",
+      "hash": "b433a5d74658a770224ac02f1a9cd5b4095808f8"
+    },
+    "19KcNQFiIBZAnZxsPc5uqIyEcZja_WJkL": {
+      "mod": "Nov 12",
+      "hash": "9285069b1e4a48779b268f13664361f025d1e0e9"
+    },
+    "1EuzRqifTI03ffMPMjEbolsseEFTGL1S4": {
+      "mod": "Oct 26",
+      "hash": "b07e5fd9da596425a37bcf0e038250c3968423a7"
+    },
+    "1VObbYylPzFTz8O5cBc6U4BQbDjmuKdB3": {
+      "mod": "Oct 26",
+      "hash": "82076befbd611a42bbce38280765d544a84024b3"
+    },
+    "1K4vZhJwnY1XVYwjtoUnNzSUFvXmPrMvY": {
+      "mod": "Oct 26",
+      "hash": "a60f5fde52dd57f67dd197c65f829ace0472fa04"
+    },
+    "1xw0pl1D4QBAX0vwNYbtcDjfJ59iRod1a": {
+      "mod": "Oct 26",
+      "hash": "f69b8d0623df29f0cbd498f0f7b33af49807ab07"
+    },
+    "1-7mi_mcHQQpvCrsjJQNUOd1jYCuJYrmy": {
+      "mod": "Nov 12",
+      "hash": "79a57c057fb5af11a53cfb2250b1ea2aa4a12b5f"
+    },
+    "1BKZ5mNRW7G5ptx9xk1qRVK9PFUMRbDHf": {
+      "mod": "Oct 26",
+      "hash": "ec8c6772c9d1261b481c28c6ea0d5fc7129c4a7b"
+    },
+    "1DWXRyUj_qPB3FHy1ow___Lf_Zqvfai5X": {
+      "mod": "Oct 26",
+      "hash": "664ba32de7038362dc551dc1ac6188602958a2fb"
+    },
+    "1vU7h3XJzFFWP3Y0zXRwaqICUsEoXFBsB": {
+      "mod": "Nov 12",
+      "hash": "9da8c5d7e90350801b9eaf4a8fb9ac72ec3e8e6c"
+    },
+    "1XTmf0XHV-jPjpl6H42KE5UApc8EaKJKT": {
+      "mod": "Oct 26",
+      "hash": "1fabab135340fc02ac263caf0d14fe1615fdba6c"
+    },
+    "16ALWvmjXw2u5BMyJgRVE-i-i1MZE_iz8": {
+      "mod": "Oct 26",
+      "hash": "155ca4f4fe071807014b4b579a4e483ff79e04a0"
+    },
+    "1DCjRJ5mjF6qKWgM2dC1YWQJsLqEsWC5J": {
+      "mod": "Oct 26",
+      "hash": "b6c8246dd14ebfe673bd1165e232ad1791ae0f3b"
+    },
+    "1KPYBsP01EEQefHsLknwOTfsvbtL9jU1e": {
+      "mod": "Oct 26",
+      "hash": "99026f63c3f1f32e38d95e4ee1192c7fcecdc33a"
+    },
+    "1LUdJAzoudbCHJ3Up9XqkAbcBo6EQtQhl": {
+      "mod": "Oct 26",
+      "hash": "a77bd91da7332e0cb29cae558d350f4b3e52c82b"
+    },
+    "1xY7DkyMkpCJ85DsjK7ji5MbM5PAe383V": {
+      "mod": "Oct 26",
+      "hash": "9ae481615e14549636027942f54e990a5586a72c"
+    }
+  },
+  "updated": "2026-11-23T12:46:08.826Z"
 }

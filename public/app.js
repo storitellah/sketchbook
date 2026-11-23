@@ -1,203 +1,183 @@
-// Luna & Lara's sketchbook: a small flip-book with no dependencies.
+// Luna & Lara's art books: a page-curl flipbook built on StPageFlip.
 // Artwork comes from gallery.json, which the Drive sync keeps up to date.
 
 const $ = (sel) => document.querySelector(sel);
-const book = $('#book');
+const host = $('#book-host');
 const stage = $('#stage');
 const tabsEl = $('.tabs');
 const prevBtn = $('#prev');
 const nextBtn = $('#next');
 const counter = $('#counter');
+const fill = $('#fill');
 const viewer = $('#viewer');
 
 const PAGE_RATIO = 3 / 4; // page width / height
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// On touch screens we read swipes and taps ourselves (see below); the library's
+// own touch handling can turn the wrong way in single-page mode.
+const touch = matchMedia('(pointer: coarse)').matches;
 
 let data;
 let girl;
-let pages = [];   // flat list of page descriptions, cover first
-let leaves = [];  // DOM leaves; each leaf has a front and a back face
-let current = 0;  // how many leaves have been turned
-let single = false;
-let pageW = 300;
-let raise = 1000;
+let pages = []; // page descriptions, front cover first
+let flip;       // the StPageFlip instance
+let layoutKey = '';
+let pageW = 0;
 
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-function formatDate(iso) {
+function formatDate(iso, opts = { day: 'numeric', month: 'short', year: 'numeric' }) {
+  if (!iso) return '';
   const d = new Date(iso + 'T12:00:00');
-  return isNaN(d) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  return isNaN(d) ? '' : d.toLocaleDateString(undefined, opts);
 }
 
-// ---------- building the book ----------
+// Pick the smaller image when it is sharp enough for the page on this screen.
+const srcFor = (a) => (pageW * devicePixelRatio <= 700 && a.srcset ? a.src.replace(/-1280\.webp$/, '-640.webp') : a.src);
+
+// ---------- pages ----------
 
 function buildPages() {
   const art = girl.art || [];
   pages = [{ type: 'cover' }];
   art.forEach((a, i) => pages.push({ type: 'art', art: a, n: i + 1 }));
-  if (!art.length) pages.push({ type: 'blank', text: `${esc(girl.name)}'s first drawings are on their way!` });
-  // In a two-page spread the back cover must land on the back of the last leaf.
-  if (!single && pages.length % 2 === 1) pages.push({ type: 'blank', text: '' });
-  pages.push({ type: 'end' });
+  if (!art.length) pages.push({ type: 'note', html: `<span class="big">🎨</span>${esc(girl.name)}'s first drawings are on their way!` });
+  // With hard covers the back cover must land on a left-hand page.
+  if (pages.length % 2 === 0) pages.push({ type: 'note', html: '<span class="big">✨</span>More art coming soon' });
+  pages.push({ type: 'back' });
 }
 
+const ICON_ZOOM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/></svg>';
+
 function pageHTML(p, i) {
-  if (!p) return '<div class="page"></div>';
+  const side = i % 2 ? 'left' : 'right';
   if (p.type === 'cover') {
-    const count = girl.art?.length || 0;
-    return `<div class="page cover"><div class="label">
-      <h2>${esc(girl.name)}'s</h2><p>Sketchbook</p>
-      <p>${count ? `${count} drawing${count === 1 ? '' : 's'}` : 'coming soon'}</p></div></div>`;
+    const art = girl.art || [];
+    const feature = art.at(-1);
+    const dates = art.map((a) => a.date).filter(Boolean).sort();
+    const years = dates.length ? [...new Set([dates[0].slice(0, 4), dates.at(-1).slice(0, 4)])].join('–') : '';
+    return `<div class="page cover right" data-density="hard"><div class="page-inner">
+      <span class="kicker">Art book</span>
+      <h2>${esc(girl.name)}</h2>
+      ${feature
+        ? `<div class="feature"><img src="${esc(srcFor(feature))}" alt="" draggable="false"></div>`
+        : '<div class="feature empty" aria-hidden="true">🖍️</div>'}
+      <p class="meta">${art.length ? `<b>${art.length}</b> drawing${art.length === 1 ? '' : 's'}${years ? ` · ${years}` : ''}` : 'Coming soon'}</p>
+    </div></div>`;
   }
-  if (p.type === 'end') {
-    return `<div class="page cover"><div class="label"><h2>The End</h2><p>…for now! More drawings soon.</p></div></div>`;
+  if (p.type === 'back') {
+    return `<div class="page cover back left" data-density="hard"><div class="page-inner">
+      <h2>The End<small>…for now!</small></h2>
+      <button class="again" type="button" data-action="restart">Read again ↺</button>
+    </div></div>`;
   }
-  if (p.type === 'blank') {
-    return `<div class="page"><p class="blank">${p.text}</p></div>`;
+  if (p.type === 'note') {
+    return `<div class="page ${side}"><div class="page-inner"><p class="note">${p.html}</p></div></div>`;
   }
   const a = p.art;
-  const rot = ((i * 37) % 5) - 2; // a gentle, stable tilt per drawing
-  const caption = a.title ? esc(a.title) : '';
-  const date = a.date ? `<span class="date">${formatDate(a.date)}</span>` : '';
-  return `<div class="page">
-    <div class="frame" style="--rot:${rot * 0.6}deg">
-      <span class="tape" style="top:-6px;left:12%;transform:rotate(${-8 + rot}deg)"></span>
-      <span class="tape" style="bottom:-6px;right:12%;transform:rotate(${6 - rot}deg)"></span>
-      <img data-src="${esc(a.src)}" data-srcset="${esc(a.srcset || '')}" width="${a.w}" height="${a.h}"
-        style="--ph:${esc(a.color || '#eee5d5')}" alt="${caption || `Drawing ${p.n} by ${esc(girl.name)}`}" decoding="async" draggable="false">
-    </div>
-    <p class="caption">${caption}${date}</p>
-    <button class="zoom" type="button" data-page="${i}" aria-label="View larger">&#x2922;</button>
+  const label = a.title || `Drawing ${p.n}`;
+  return `<div class="page ${side}"><div class="page-inner">
+    <div class="art"><img src="${esc(srcFor(a))}" width="${a.w}" height="${a.h}" loading="lazy" decoding="async"
+      style="--ph:${esc(a.color)}" alt="${esc(label)} by ${esc(girl.name)}" draggable="false"></div>
+    <p class="caption">${a.title ? `<span class="title">${esc(a.title)}</span>` : ''}${a.date ? `<span class="date">${formatDate(a.date)}</span>` : ''}</p>
+    <button class="zoom" type="button" data-zoom="${i}" aria-label="View ${esc(label)} larger">${ICON_ZOOM}View big</button>
     <span class="folio">${p.n}</span>
-  </div>`;
+  </div></div>`;
+}
+
+// ---------- the flipbook ----------
+
+function computeLayout() {
+  const w = stage.clientWidth - 32;
+  const h = stage.clientHeight - 16;
+  const spread = w >= 720 && w > h * 1.1;
+  pageW = Math.floor(Math.max(150, Math.min(spread ? w / 2 : w, h * PAGE_RATIO)));
+  return { spread, pageW, pageH: Math.floor(pageW / PAGE_RATIO) };
 }
 
 function build(startPage = 0) {
+  const { spread, pageW: width, pageH: height } = computeLayout();
+  layoutKey = `${girl.slug}|${spread}|${width}`;
+  document.documentElement.style.setProperty('--page-w', `${width}px`);
+  document.documentElement.style.setProperty('--page-h', `${height}px`);
+
+  if (flip) flip.destroy(); // also removes its root element
+  const root = document.createElement('div');
+  host.replaceChildren(root);
   buildPages();
-  const faces = [];
-  if (single) pages.forEach((p, i) => faces.push([i, null]));
-  else for (let i = 0; i < pages.length; i += 2) faces.push([i, i + 1]);
+  root.innerHTML = pages.map(pageHTML).join('');
 
-  book.classList.add('instant');
-  book.classList.toggle('single', single);
-  book.innerHTML = faces.map(([f, b]) => `<div class="leaf">
-      <div class="face front">${pageHTML(pages[f], f)}</div>
-      <div class="face back">${b == null ? pageHTML(null) : pageHTML(pages[b], b)}</div>
-    </div>`).join('');
-  leaves = [...book.children];
-  current = Math.min(single ? startPage : Math.ceil(startPage / 2), maxTurn());
-  update();
-  requestAnimationFrame(() => requestAnimationFrame(() => book.classList.remove('instant')));
-}
-
-// On phones the last page can't be turned (there's nothing to see behind it).
-const maxTurn = () => (single ? leaves.length - 1 : leaves.length);
-
-// The page index the reader is looking at (right-hand page in a spread).
-function visiblePage() {
-  if (single) return current;
-  return current >= leaves.length ? pages.length - 1 : current * 2;
-}
-
-// ---------- state ----------
-
-function update(changed = []) {
-  const n = leaves.length;
-  leaves.forEach((leaf, k) => {
-    const flipped = k < current;
-    leaf.classList.toggle('flipped', flipped);
-    if (changed.includes(k)) {
-      leaf.style.zIndex = ++raise;
-      setTimeout(() => { if (leaf.style.zIndex == raise) settle(); }, 900);
-    } else if (!leaf.style.zIndex || leaf.style.zIndex < 1000) {
-      leaf.style.zIndex = flipped ? k + 1 : n - k;
-    }
+  flip = new St.PageFlip(root, {
+    width,
+    height,
+    size: 'fixed',
+    showCover: true,
+    usePortrait: !spread,
+    autoSize: true,
+    maxShadowOpacity: 0.45,
+    flippingTime: reduceMotion ? 300 : 800,
+    mobileScrollSupport: false,
+    useMouseEvents: !touch,
+    startPage: Math.min(startPage, pages.length - 1),
+    startZIndex: 1,
   });
+  flip.loadFromHTML(root.querySelectorAll('.page'));
+  flip.on('flip', update);
+  flip.on('changeOrientation', update);
+  // Slide a closed book back to the middle as soon as it starts to open.
+  flip.on('changeState', (e) => { if (e.data === 'flipping') host.style.transform = 'translateX(0)'; });
+  update();
+}
 
-  let shift = 0;
-  if (!single && current === 0) shift = -pageW / 2;
-  if (!single && current === n) shift = pageW / 2;
-  book.style.setProperty('--shift', `${shift}px`);
+function update() {
+  if (!flip) return;
+  const i = flip.getCurrentPageIndex();
+  const total = pages.length;
+  const landscape = flip.getOrientation() === 'landscape';
+  host.classList.toggle('landscape', landscape);
+  host.classList.toggle('portrait', !landscape);
+  // A closed book shows one cover; slide it to the middle of the stage.
+  const shift = !landscape ? 0 : i === 0 ? -pageW / 2 : i >= total - 1 ? pageW / 2 : 0;
+  host.style.transform = `translateX(${shift}px)`;
 
-  prevBtn.disabled = current === 0;
-  nextBtn.disabled = current >= maxTurn();
-  const p = visiblePage();
-  const total = girl.art?.length || 0;
-  const pageOf = (i) => pages[i]?.type === 'art' ? pages[i].n : null;
-  const shown = [single ? null : pageOf(p - 1), pageOf(p)].filter(Boolean);
-  counter.textContent = current === 0 ? 'Cover'
-    : shown.length ? `${shown.join('–')} / ${total}`
-    : pages[p]?.type === 'end' ? 'The End' : '';
+  const visible = landscape && i > 0 ? [i, i + 1] : [i];
+  const nums = visible.map((v) => pages[v]?.n).filter(Boolean);
+  const count = girl.art?.length || 0;
+  counter.textContent = i === 0 ? 'Cover'
+    : nums.length ? `Page ${nums.join('–')} of ${count}`
+    : visible.some((v) => pages[v]?.type === 'back') ? 'The End' : '';
+  fill.style.width = `${Math.round((Math.min(i + (landscape && i ? 1 : 0), total - 1) / (total - 1)) * 100)}%`;
+  prevBtn.disabled = i === 0;
+  nextBtn.disabled = i >= total - 1 || (landscape && i + 1 >= total - 1 && i !== 0);
 
-  loadNear();
-  const hash = `#${girl.slug}${p ? `/${p}` : ''}`;
+  // Warm the cache for the drawings a page or two ahead and behind.
+  for (let k = Math.max(0, i - 2); k <= Math.min(total - 1, i + 4); k++) {
+    if (pages[k]?.art) new Image().src = srcFor(pages[k].art);
+  }
+  const hash = `#${girl.slug}${i ? `/${i}` : ''}`;
   if (location.hash !== hash) history.replaceState(null, '', hash);
 }
 
-// Once a turn has finished, put every leaf back in its natural stacking order.
-function settle() {
-  const n = leaves.length;
-  leaves.forEach((leaf, k) => { leaf.style.zIndex = k < current ? k + 1 : n - k; });
-}
-
-function go(delta) {
-  const target = Math.max(0, Math.min(maxTurn(), current + delta));
-  if (target === current) return;
-  const changed = [];
-  for (let k = Math.min(current, target); k < Math.max(current, target); k++) changed.push(k);
-  current = target;
-  update(changed);
-}
-
-function goTo(turn) { go(turn - current); }
-
-// Only download drawings on or near the open pages.
-function loadNear() {
-  const lo = Math.max(0, current - 2);
-  const hi = Math.min(leaves.length - 1, current + 2);
-  for (let k = lo; k <= hi; k++) {
-    for (const img of leaves[k].querySelectorAll('img[data-src]')) {
-      img.sizes = `${Math.round(pageW)}px`;
-      if (img.dataset.srcset) img.srcset = img.dataset.srcset;
-      img.src = img.dataset.src;
-      img.removeAttribute('data-src');
-      if (img.complete) img.classList.add('loaded');
-      else img.addEventListener('load', () => img.classList.add('loaded'), { once: true });
-    }
-  }
-}
-
-// ---------- layout ----------
-
-function layout() {
-  const w = stage.clientWidth - 32;
-  const h = stage.clientHeight - 12;
-  const wantSingle = w < 700 || w < h * 1.05;
-  pageW = Math.floor(Math.max(160, Math.min(wantSingle ? w - 16 : w / 2 - 8, h * PAGE_RATIO)));
-  document.documentElement.style.setProperty('--page-w', `${pageW}px`);
-  document.documentElement.style.setProperty('--page-h', `${Math.floor(pageW / PAGE_RATIO)}px`);
-  if (wantSingle !== single && girl) {
-    const p = visiblePage();
-    single = wantSingle;
-    build(p);
-  } else {
-    single = wantSingle;
-    if (girl) update();
-  }
-}
+const next = () => flip?.flipNext('bottom');
+const prev = () => flip?.flipPrev('bottom');
 
 // ---------- tabs ----------
 
 function selectGirl(slug, startPage = 0) {
   girl = data.girls.find((g) => g.slug === slug) || data.girls[0];
-  document.body.style.setProperty('--cover', girl.cover);
+  document.body.style.setProperty('--theme', girl.cover);
   document.body.style.setProperty('--accent', girl.accent);
+  document.querySelector('meta[name=theme-color]').content = girl.cover;
+  document.title = `${girl.name}'s Art Book · Luna & Lara`;
   for (const t of tabsEl.children) t.setAttribute('aria-selected', String(t.dataset.slug === girl.slug));
   build(startPage);
 }
 
 function renderTabs() {
   tabsEl.innerHTML = data.girls.map((g) => `<button class="tab" role="tab" type="button" data-slug="${esc(g.slug)}"
-      aria-controls="book" aria-selected="false" style="--tab:${esc(g.cover)}">${esc(g.name)}</button>`).join('');
+      aria-controls="book-host" aria-selected="false" style="--tab:${esc(g.cover)}">
+      <span class="dot" aria-hidden="true"></span>${esc(g.name)}
+      <span class="count" aria-label="${g.art.length} drawings">${g.art.length}</span></button>`).join('');
   tabsEl.addEventListener('click', (e) => {
     const t = e.target.closest('.tab');
     if (t && t.dataset.slug !== girl.slug) selectGirl(t.dataset.slug);
@@ -209,7 +189,7 @@ function fromHash() {
   return { slug, page: Math.max(0, parseInt(page, 10) || 0) };
 }
 
-// ---------- input ----------
+// ---------- viewer ----------
 
 function openViewer(i) {
   const a = pages[i]?.art;
@@ -217,61 +197,75 @@ function openViewer(i) {
   const img = viewer.querySelector('img');
   img.src = a.src;
   img.alt = a.title || `Drawing by ${girl.name}`;
-  viewer.querySelector('.viewer-caption').textContent = [a.title, formatDate(a.date)].filter(Boolean).join(' · ');
+  viewer.querySelector('figcaption').innerHTML =
+    `${esc(a.title || `${girl.name}'s drawing`)}${a.date ? `<span>${formatDate(a.date, { day: 'numeric', month: 'long', year: 'numeric' })}</span>` : ''}`;
   viewer.showModal();
 }
 
+// Presses on buttons inside a page must not reach the flipbook, which would
+// treat them as the start of a page turn (and on touch screens swallow the tap).
+for (const type of ['mousedown', 'touchstart', 'pointerdown']) {
+  host.addEventListener(type, (e) => { if (e.target.closest('button')) e.stopPropagation(); }, { capture: true });
+}
+host.addEventListener('click', (e) => {
+  const zoom = e.target.closest('[data-zoom]');
+  if (zoom) return openViewer(+zoom.dataset.zoom);
+  if (e.target.closest('[data-action=restart]')) flip?.flip(0, 'top');
+});
+viewer.addEventListener('click', (e) => { if (e.target === viewer) viewer.close(); });
+
+// ---------- keyboard & buttons ----------
+
 document.addEventListener('keydown', (e) => {
-  if (!girl || viewer.open || e.altKey || e.ctrlKey || e.metaKey) return;
-  const onButton = e.target.closest?.('button');
+  if (!flip || viewer.open || e.altKey || e.ctrlKey || e.metaKey) return;
   switch (e.key) {
-    case 'ArrowRight': case 'ArrowDown': case 'PageDown': go(1); break;
-    case 'ArrowLeft': case 'ArrowUp': case 'PageUp': go(-1); break;
-    case ' ': if (onButton) return; go(e.shiftKey ? -1 : 1); break;
-    case 'Home': goTo(0); break;
-    case 'End': goTo(maxTurn()); break;
+    case 'ArrowRight': case 'ArrowDown': case 'PageDown': next(); break;
+    case 'ArrowLeft': case 'ArrowUp': case 'PageUp': prev(); break;
+    case ' ': if (e.target.closest?.('button')) return; e.shiftKey ? prev() : next(); break;
+    case 'Home': flip.flip(0, 'top'); break;
+    case 'End': flip.flip(pages.length - 1, 'top'); break;
     default: return;
   }
   e.preventDefault();
 });
-
-book.addEventListener('click', (e) => {
-  const zoom = e.target.closest('.zoom');
-  if (zoom) openViewer(+zoom.dataset.page);
-});
-
-prevBtn.addEventListener('click', () => go(-1));
-nextBtn.addEventListener('click', () => go(1));
-
-let start = null;
-stage.addEventListener('pointerdown', (e) => {
-  if (e.button === 0) start = { x: e.clientX, y: e.clientY, t: Date.now() };
-});
-stage.addEventListener('pointerup', (e) => {
-  if (!start || !girl) return;
-  const dx = e.clientX - start.x;
-  const dy = e.clientY - start.y;
-  start = null;
-  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) return go(dx < 0 ? 1 : -1);
-  if (Math.hypot(dx, dy) > 10) return;
-  if (e.target.closest('.zoom') || !e.target.closest('.book')) return;
-  const r = book.getBoundingClientRect();
-  const x = (e.clientX - r.left) / r.width;
-  go(x < (single ? 0.3 : 0.5) ? -1 : 1);
-});
-stage.addEventListener('pointercancel', () => { start = null; });
-
-viewer.addEventListener('click', (e) => { if (e.target === viewer) viewer.close(); });
+prevBtn.addEventListener('click', prev);
+nextBtn.addEventListener('click', next);
 
 addEventListener('hashchange', () => {
   const { slug, page } = fromHash();
   if (slug && slug !== girl?.slug) selectGirl(slug, page);
 });
 
+if (touch) {
+  let start = null;
+  host.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || e.target.closest('button')) return (start = null);
+    start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  host.addEventListener('touchend', (e) => {
+    if (!start || !flip) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    start = null;
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) return dx < 0 ? next() : prev();
+    if (Math.hypot(dx, dy) < 10) {
+      // A tap: left third goes back, anywhere else goes forward.
+      const r = host.getBoundingClientRect();
+      ((t.clientX - r.left) / r.width < (flip.getOrientation() === 'portrait' ? 1 / 3 : 1 / 2) ? prev : next)();
+    }
+  });
+}
+
 let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(layout, 80);
+  resizeTimer = setTimeout(() => {
+    if (!girl) return;
+    const { spread, pageW: w } = computeLayout();
+    const [, oldSpread, oldW] = layoutKey.split('|');
+    if (String(spread) !== oldSpread || Math.abs(w - oldW) > 24) build(flip?.getCurrentPageIndex() || 0);
+  }, 150);
 });
 
 // ---------- start ----------
@@ -281,10 +275,13 @@ fetch('gallery.json')
   .then((json) => {
     data = json;
     renderTabs();
-    layout();
+    if (data.updated) {
+      $('#foot-note').textContent = `Updated ${formatDate(data.updated.slice(0, 10), { day: 'numeric', month: 'long', year: 'numeric' })}`;
+    }
     const { slug, page } = fromHash();
     selectGirl(slug, page);
   })
-  .catch(() => {
-    book.innerHTML = '<div class="page"><p class="blank">The sketchbook couldn\'t be opened. Please refresh.</p></div>';
+  .catch((err) => {
+    console.error(err);
+    host.innerHTML = '<p class="note">The art books couldn\'t be opened. Please refresh the page.</p>';
   });

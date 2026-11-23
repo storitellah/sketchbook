@@ -63,6 +63,7 @@ async function listPublic(id) {
     id: chunk.match(/id="entry-([\w-]+)"/)?.[1],
     name: decodeHtml(chunk.match(/class="flip-entry-title">([^<]*)</)?.[1] || ''),
     folder: /href="[^"]*\/folders\//.test(chunk),
+    modified: decodeHtml(chunk.match(/flip-entry-last-modified"><div>([^<]*)</)?.[1] || ''),
   })).filter((f) => f.id);
 }
 
@@ -73,13 +74,13 @@ async function listApi(id) {
     const u = new URL('https://www.googleapis.com/drive/v3/files');
     const params = {
       q: `'${id}' in parents and trashed = false`,
-      fields: 'nextPageToken, files(id, name, mimeType)',
+      fields: 'nextPageToken, files(id, name, mimeType, modifiedTime)',
       pageSize: '1000', supportsAllDrives: 'true', includeItemsFromAllDrives: 'true', key,
       ...(pageToken && { pageToken }),
     };
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
     const body = await (await get(u, `folder ${id}`)).json();
-    files.push(...body.files.map((f) => ({ id: f.id, name: f.name, folder: f.mimeType === 'application/vnd.google-apps.folder' })));
+    files.push(...body.files.map((f) => ({ id: f.id, name: f.name, modified: f.modifiedTime, folder: f.mimeType === 'application/vnd.google-apps.folder' })));
     pageToken = body.nextPageToken || '';
   } while (pageToken);
   return files;
@@ -179,6 +180,8 @@ const folders = (await list(rootId)).filter((f) => f.folder);
 const books = new Map(config.girls.map((g) => [g.slug, []]));
 const seen = new Set();
 const keep = new Set();
+const sources = {}; // Drive file id -> { mod, hash }, so unchanged files aren't downloaded again
+const safeDownload = (file) => download(file).catch((err) => console.warn(`  ! skipped ${file.name}: ${err.message}`));
 let added = 0;
 
 for (const girl of config.girls) {
@@ -186,14 +189,14 @@ for (const girl of config.girls) {
   if (!folder) console.warn(`No folder named like "${girl.name}" in the Drive folder.`);
   for (const file of folder ? await listArt(folder.id) : []) {
     const owner = ownerByName(file.name, girl);
-    let buf;
-    try {
-      buf = await download(file);
-    } catch (err) {
-      console.warn(`  ! skipped ${file.name}: ${err.message}`);
-      continue;
+    const known = previous.sources?.[file.id];
+    let buf = null;
+    let hash = file.modified && known?.mod === file.modified ? known.hash : null;
+    if (!hash) {
+      if (!(buf = await safeDownload(file))) continue;
+      hash = createHash('sha1').update(buf).digest('hex');
     }
-    const hash = createHash('sha1').update(buf).digest('hex');
+    sources[file.id] = { mod: file.modified || '', hash };
     if (seen.has(hash)) {
       console.log(`  = ${file.name} is a duplicate, skipped`);
       continue;
@@ -211,6 +214,7 @@ for (const girl of config.girls) {
 
     let entries = fresh ? cached : null;
     if (!entries) {
+      if (!buf && !(buf = await safeDownload(file))) continue;
       try {
         console.log(`  + ${owner.name}: ${file.name}`);
         const { pages, date } = /\.pdf$/i.test(file.name) ? await pdfPages(buf) : await imagePages(file, buf);
@@ -277,7 +281,7 @@ for (const sub of await readdir(path.join(PUBLIC, 'art'))) {
 }
 
 const strip = (m) => JSON.stringify({ ...m, updated: undefined });
-const next = { title: config.title, girls };
+const next = { title: config.title, girls, sources };
 if (strip(next) !== strip(previous)) {
   next.updated = new Date().toISOString();
   await writeFile(MANIFEST, JSON.stringify(next, null, 2) + '\n');
