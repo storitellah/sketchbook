@@ -5,14 +5,14 @@
     {
       "slug": "luna",
       "name": "Luna",
-      "cover": "#3e63dd",
-      "accent": "#ffb224"
+      "cover": "#7c3aed",
+      "accent": "#f9a8d4"
     },
     {
       "slug": "lara",
       "name": "Lara",
-      "cover": "#c2298a",
-      "accent": "#12a594"
+      "cover": "#db2777",
+      "accent": "#d8b4fe"
     }
   ]
 }

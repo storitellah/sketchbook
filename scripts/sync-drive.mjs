@@ -165,6 +165,11 @@ function ownerByName(name, fallback) {
   return config.girls.find((g) => new RegExp(`^${g.name}[\\s_-]`, 'i').test(name)) || fallback;
 }
 
+// Words that don't make a title on their own: "Art II" or "Adobe Scan" says
+// nothing about the drawing, so files named like that stay out of the book.
+const GENERIC = new Set('art artwork artworks drawing drawings picture pictures painting paintings sketch sketches untitled new copy final document doc page pages file'.split(' '));
+
+// The caption for a file, or '' when its name has no real title.
 function titleFrom(name, girl) {
   let t = name.replace(/\.[^.]+$/, '')
     .replace(DATE_RE, ' ')
@@ -175,7 +180,8 @@ function titleFrom(name, girl) {
     .replace(new RegExp(`^\\s*${girl.name}('s)?\\b`, 'i'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!/[a-z]{3}/i.test(t) || /^[ivxlc\d\s]+$/i.test(t)) return '';
+  const words = t.toLowerCase().split(' ').filter(Boolean);
+  if (!words.some((w) => /[a-z]{2}/.test(w) && !GENERIC.has(w) && !/^[ivxlc]+$/.test(w))) return '';
   return t[0].toUpperCase() + t.slice(1);
 }
 
@@ -196,6 +202,11 @@ for (const girl of config.girls) {
   if (!folder) console.warn(`No folder named like "${girl.name}" in the Drive folder.`);
   for (const file of folder ? await listArt(folder.id) : []) {
     const owner = ownerByName(withoutOrder(file.name), girl);
+    const title = titleFrom(withoutOrder(file.name), owner);
+    if (!title) {
+      console.log(`  - ${file.name}: no title in the name, left out`);
+      continue;
+    }
     const known = previous.sources?.[file.id];
     let buf = null;
     let hash = file.modified && known?.mod === file.modified ? known.hash : null;
@@ -257,7 +268,7 @@ for (const girl of config.girls) {
       WIDTHS.forEach((w) => keep.add(`${owner.slug}/${e.tag}-${w}.webp`));
       books.get(owner.slug).push({
         ...e,
-        title: titleFrom(withoutOrder(file.name), owner),
+        title,
         name: file.name,
         order: orderOf(file.name),
         src: `art/${owner.slug}/${e.tag}-${WIDTHS.at(-1)}.webp`,

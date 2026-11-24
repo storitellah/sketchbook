@@ -54,15 +54,13 @@ function pageHTML(p, i) {
   if (p.type === 'cover') {
     const art = girl.art || [];
     const feature = art.at(-1);
-    const dates = art.map((a) => a.date).filter(Boolean).sort();
-    const years = dates.length ? [...new Set([dates[0].slice(0, 4), dates.at(-1).slice(0, 4)])].join('–') : '';
     return `<div class="page cover right" data-density="hard"><div class="page-inner">
       <span class="kicker">Art book</span>
       <h2>${esc(girl.name)}</h2>
       ${feature
         ? `<div class="feature"><img src="${esc(srcFor(feature))}" alt="" draggable="false"></div>`
         : '<div class="feature empty" aria-hidden="true">🖍️</div>'}
-      <p class="meta">${art.length ? `<b>${art.length}</b> drawing${art.length === 1 ? '' : 's'}${years ? ` · ${years}` : ''}` : 'Coming soon'}</p>
+      <p class="meta">${art.length ? `<b>${art.length}</b> drawing${art.length === 1 ? '' : 's'}` : 'Coming soon'}</p>
     </div></div>`;
   }
   if (p.type === 'back') {
@@ -79,7 +77,7 @@ function pageHTML(p, i) {
   return `<div class="page ${side}"><div class="page-inner">
     <div class="art"><img src="${esc(srcFor(a))}" width="${a.w}" height="${a.h}" loading="lazy" decoding="async"
       style="--ph:${esc(a.color)}" alt="${esc(label)} by ${esc(girl.name)}" draggable="false"></div>
-    <p class="caption">${a.title ? `<span class="title">${esc(a.title)}</span>` : ''}${a.date ? `<span class="date">${formatDate(a.date)}</span>` : ''}</p>
+    <p class="caption"><span class="title">${esc(a.title)}</span></p>
     <button class="zoom" type="button" data-zoom="${i}" aria-label="View ${esc(label)} larger">${ICON_ZOOM}View big</button>
     <span class="folio">${p.n}</span>
   </div></div>`;
@@ -198,7 +196,7 @@ function openViewer(i) {
   img.src = a.src;
   img.alt = a.title || `Drawing by ${girl.name}`;
   viewer.querySelector('figcaption').innerHTML =
-    `${esc(a.title || `${girl.name}'s drawing`)}${a.date ? `<span>${formatDate(a.date, { day: 'numeric', month: 'long', year: 'numeric' })}</span>` : ''}`;
+    `${esc(a.title)}<span>by ${esc(girl.name)}</span>`;
   viewer.showModal();
 }
 
