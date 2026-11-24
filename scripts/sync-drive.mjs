@@ -166,7 +166,7 @@ function ownerByName(name, fallback) {
 }
 
 // Words that don't make a title on their own: "Art II" or "Adobe Scan" says
-// nothing about the drawing, so files named like that stay out of the book.
+// nothing about the drawing, so files named like that get no caption.
 const GENERIC = new Set('art artwork artworks drawing drawings picture pictures painting paintings sketch sketches untitled new copy final document doc page pages file'.split(' '));
 
 // The caption for a file, or '' when its name has no real title.
@@ -203,10 +203,6 @@ for (const girl of config.girls) {
   for (const file of folder ? await listArt(folder.id) : []) {
     const owner = ownerByName(withoutOrder(file.name), girl);
     const title = titleFrom(withoutOrder(file.name), owner);
-    if (!title) {
-      console.log(`  - ${file.name}: no title in the name, left out`);
-      continue;
-    }
     const known = previous.sources?.[file.id];
     let buf = null;
     let hash = file.modified && known?.mod === file.modified ? known.hash : null;

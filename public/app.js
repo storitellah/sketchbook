@@ -77,7 +77,7 @@ function pageHTML(p, i) {
   return `<div class="page ${side}"><div class="page-inner">
     <div class="art"><img src="${esc(srcFor(a))}" width="${a.w}" height="${a.h}" loading="lazy" decoding="async"
       style="--ph:${esc(a.color)}" alt="${esc(label)} by ${esc(girl.name)}" draggable="false"></div>
-    <p class="caption"><span class="title">${esc(a.title)}</span></p>
+    <p class="caption">${a.title ? `<span class="title">${esc(a.title)}</span>` : ''}</p>
     <button class="zoom" type="button" data-zoom="${i}" aria-label="View ${esc(label)} larger">${ICON_ZOOM}View big</button>
     <span class="folio">${p.n}</span>
   </div></div>`;
@@ -196,7 +196,7 @@ function openViewer(i) {
   img.src = a.src;
   img.alt = a.title || `Drawing by ${girl.name}`;
   viewer.querySelector('figcaption').innerHTML =
-    `${esc(a.title)}<span>by ${esc(girl.name)}</span>`;
+    `${a.title ? esc(a.title) : ''}<span>by ${esc(girl.name)}</span>`;
   viewer.showModal();
 }
 
