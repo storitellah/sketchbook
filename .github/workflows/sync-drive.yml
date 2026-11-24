@@ -2,8 +2,10 @@ name: Sync artwork from Google Drive
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # every 15 minutes (GitHub may run it a little late)
-  workflow_dispatch: # "Run workflow" button for an instant update
+    # Backup only: GitHub often runs schedules hours late. The Cloudflare Worker
+    # in worker/ starts this job every 10 minutes on time.
+    - cron: "23 * * * *"
+  workflow_dispatch: # "Run workflow" button, and how the Cloudflare Worker starts it
 
 permissions:
   contents: write

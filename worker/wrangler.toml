@@ -1,0 +1,12 @@
+# Optional: deploy the sync trigger from the command line instead of the
+# dashboard with `npx wrangler deploy --config worker/wrangler.toml`, then add
+# the token with `npx wrangler secret put GITHUB_TOKEN --config worker/wrangler.toml`.
+name = "sketchbook-sync"
+main = "sync-trigger.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+GITHUB_REPO = "storitellah/sketchbook"
+
+[triggers]
+crons = ["*/10 * * * *"]
