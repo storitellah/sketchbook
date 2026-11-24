@@ -37,10 +37,12 @@ Nothing to configure. The job always works on `main`, so it doesn't matter which
 
 - **Add a drawing:** drop a photo or a PDF scan into the girl's folder. Each page of a PDF becomes its own sketchbook page. It usually shows up on the site within 15 to 30 minutes. GitHub sometimes runs scheduled jobs late, so for an instant update, run the workflow by hand.
 - **Order:** drawings are sorted oldest to newest. The date comes from the file name (`Adobe Scan Jun 14, 2025.pdf`), otherwise from the scan or photo itself. Drawings with no date go at the end.
+- **Choose the order yourself:** put a number at the start of a file name, like `01 Rainbow.pdf`, `02 Unicorns.pdf` or `3. Cat.jpg`. Numbered drawings come first, in number order, and the number isn't shown in the caption. Leaving gaps (10, 20, 30) makes it easy to slot new ones in later.
 - **Captions:** the file name becomes the caption, so `Rainbow by Luna.pdf` is captioned "Rainbow". Names like `Adobe Scan …` or `IMG_2041.jpg` get no caption.
 - **Wrong folder?** A file whose name starts with the other girl's name (`Lara_scan.pdf` in Luna's folder) goes into the other girl's book.
 - **Duplicates:** identical files are only shown once.
 - **Remove a drawing:** delete it from Drive. It disappears from the site at the next sync.
+- **Hide a drawing without deleting it:** make a subfolder called `Hidden` (or `Archive`) inside the girl's folder and move the file there. Move it back to show it again.
 - **Formats:** PDF, JPG, PNG, WebP and most other image types. iPhone HEIC photos fall back to Drive's own preview copy.
 
 ## Customising

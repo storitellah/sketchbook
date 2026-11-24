@@ -89,10 +89,11 @@ async function listApi(id) {
 const list = key ? listApi : listPublic;
 
 // Artwork files in a folder, including any subfolders (e.g. one per year).
+// A subfolder named "Hidden" or "Archive" is left out of the book.
 async function listArt(id) {
   const out = [];
   for (const f of await list(id)) {
-    if (f.folder) out.push(...(await listArt(f.id)));
+    if (f.folder) { if (!/^(hidden|archive)/i.test(f.name)) out.push(...(await listArt(f.id))); }
     else if (/\.pdf$/i.test(f.name) || IMAGE_EXT.test(f.name)) out.push(f);
   }
   return out;
@@ -153,6 +154,12 @@ function dateInName(name) {
   return mi < 0 ? null : `${y}-${pad(mi + 1)}-${pad(d)}`;
 }
 
+// A number at the start of a file name ("01 Rainbow.pdf", "2. Cat.jpg") sets its
+// place in the book. Up to three digits, so a date like "2024-03-23 ..." isn't one.
+const ORDER_RE = /^\s*(\d{1,3})(?:[\s._)-]+|(?=[a-z]))/i;
+const orderOf = (name) => { const m = name.match(ORDER_RE); return m ? +m[1] : null; };
+const withoutOrder = (name) => name.replace(ORDER_RE, '');
+
 // A file named "Lara_..." or "Lara ..." belongs in Lara's book whichever folder it's in.
 function ownerByName(name, fallback) {
   return config.girls.find((g) => new RegExp(`^${g.name}[\\s_-]`, 'i').test(name)) || fallback;
@@ -188,7 +195,7 @@ for (const girl of config.girls) {
   const folder = folders.find((f) => f.name.toLowerCase().includes(girl.name.toLowerCase()));
   if (!folder) console.warn(`No folder named like "${girl.name}" in the Drive folder.`);
   for (const file of folder ? await listArt(folder.id) : []) {
-    const owner = ownerByName(file.name, girl);
+    const owner = ownerByName(withoutOrder(file.name), girl);
     const known = previous.sources?.[file.id];
     let buf = null;
     let hash = file.modified && known?.mod === file.modified ? known.hash : null;
@@ -250,8 +257,9 @@ for (const girl of config.girls) {
       WIDTHS.forEach((w) => keep.add(`${owner.slug}/${e.tag}-${w}.webp`));
       books.get(owner.slug).push({
         ...e,
-        title: titleFrom(file.name, owner),
+        title: titleFrom(withoutOrder(file.name), owner),
         name: file.name,
+        order: orderOf(file.name),
         src: `art/${owner.slug}/${e.tag}-${WIDTHS.at(-1)}.webp`,
         srcset: WIDTHS.map((w) => `art/${owner.slug}/${e.tag}-${w}.webp ${w}w`).join(', '),
       });
@@ -261,8 +269,10 @@ for (const girl of config.girls) {
 
 const girls = config.girls.map(({ slug, name, cover, accent }) => ({
   slug, name, cover, accent,
-  // Oldest first; drawings with no known date go at the end.
-  art: books.get(slug).sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || a.name.localeCompare(b.name) || a.page - b.page),
+  // Numbered files first, in number order; then the rest oldest first, with
+  // drawings that have no known date at the end.
+  art: books.get(slug).sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity)
+    || (a.date || '9').localeCompare(b.date || '9') || a.name.localeCompare(b.name) || a.page - b.page),
 }));
 
 // Drop images that were removed from Drive, plus the starter samples.
